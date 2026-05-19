@@ -1,0 +1,1485 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Записи</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --bg-subtle: #fbfbfa;
+            --text: #37352f;
+            --text-muted: rgba(55, 53, 47, 0.65);
+            --text-faint: rgba(55, 53, 47, 0.45);
+            --border: #e9e9e7;
+            --border-strong: #dcdcd9;
+            --hover: rgba(55, 53, 47, 0.06);
+            --hover-strong: rgba(55, 53, 47, 0.09);
+            --accent: #2383e2;
+            --shadow-sm: 0 1px 2px rgba(15, 15, 15, 0.05);
+            --shadow-md: 0 4px 12px rgba(15, 15, 15, 0.08);
+            --shadow-lg: 0 12px 32px rgba(15, 15, 15, 0.12);
+
+            --gray-bg: #e3e2e0;
+            --gray-fg: #37352f;
+            --blue-bg: #d3e5ef;
+            --blue-fg: #183347;
+            --red-bg: #ffe2dd;
+            --red-fg: #5a1d1a;
+        }
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; background: var(--bg); }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            color: var(--text);
+            font-size: 15px;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        [hidden] { display: none !important; }
+
+        /* ==================== Auth screens ==================== */
+        .auth-screen {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+        }
+        .auth-card { max-width: 380px; width: 100%; text-align: center; }
+        .auth-card .icon-circle {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+        }
+        .auth-card .avatar {
+            width: 72px;
+            height: 72px;
+            margin: 0 auto 16px;
+            border-radius: 50%;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            object-fit: cover;
+            display: block;
+        }
+        .auth-card h1 {
+            font-size: 22px;
+            font-weight: 700;
+            margin: 0 0 6px;
+            letter-spacing: -0.01em;
+        }
+        .auth-card p {
+            color: var(--text-muted);
+            font-size: 14px;
+            margin: 0 0 24px;
+        }
+        .auth-card .user-meta { font-size: 14px; color: var(--text); font-weight: 500; margin-top: 4px; }
+        .auth-card .user-email { font-size: 13px; color: var(--text-muted); margin: 2px 0 24px; word-break: break-all; }
+        .auth-actions { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+        .auth-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 9px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            font: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 120ms, border-color 120ms;
+        }
+        .auth-btn:hover { background: var(--hover); border-color: var(--border-strong); }
+        .auth-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+        .auth-btn.primary:hover { background: #1e6fc2; border-color: #1e6fc2; }
+        .auth-btn.ghost { border-color: transparent; color: var(--text-muted); }
+        .auth-btn.ghost:hover { color: var(--text); }
+        #googleBtn { display: flex; justify-content: center; margin-bottom: 12px; }
+        .spinner-lg {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        /* ==================== App layout ==================== */
+        .app { max-width: 960px; margin: 0 auto; padding: 32px 48px 80px; }
+        @media (max-width: 640px) { .app { padding: 16px 16px 60px; } }
+
+        .header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+        .header h1 { font-size: 32px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+        .header-icon { font-size: 28px; }
+        .header-spacer { flex: 1; }
+        .subtitle { color: var(--text-muted); font-size: 13px; margin: 0 0 28px 4px; }
+
+        /* User chip in header */
+        .user-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 4px 4px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            transition: background 120ms;
+        }
+        .user-chip:hover { background: var(--bg-subtle); }
+        .user-chip .user-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+        .user-chip .user-name {
+            font-size: 13px;
+            font-weight: 500;
+            max-width: 160px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .user-chip .user-logout {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0;
+        }
+        .user-chip .user-logout:hover { background: var(--hover); color: var(--text); }
+        @media (max-width: 480px) { .user-chip .user-name { display: none; } }
+
+        /* Territory selector */
+        .territory-bar { display: flex; gap: 12px; align-items: stretch; margin-bottom: 20px; flex-wrap: wrap; }
+        .selector { position: relative; flex: 1; min-width: 240px; }
+        .selector-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 14px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text);
+            text-align: left;
+            transition: background 120ms, border-color 120ms, box-shadow 120ms;
+            box-shadow: var(--shadow-sm);
+        }
+        .selector-trigger:hover { background: var(--bg-subtle); border-color: var(--border-strong); }
+        .selector-trigger:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.2); }
+        .selector-trigger .label-prefix { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); font-weight: 600; margin-right: 6px; }
+        .selector-trigger .arrow { color: var(--text-muted); transition: transform 150ms; flex-shrink: 0; }
+        .selector.open .arrow { transform: rotate(180deg); }
+        .selector-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0; right: 0;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            max-height: 360px;
+            overflow-y: auto;
+            z-index: 100;
+            padding: 6px;
+            display: none;
+        }
+        .selector.open .selector-menu { display: block; }
+        .selector-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+        .selector-item:hover { background: var(--hover); }
+        .selector-item.active { background: var(--hover-strong); font-weight: 500; }
+        .selector-item .check { opacity: 0; color: var(--accent); }
+        .selector-item.active .check { opacity: 1; }
+        .selector-item-empty { padding: 16px; color: var(--text-muted); font-size: 13px; text-align: center; }
+
+        /* Card image */
+        .card-wrap { margin-bottom: 24px; border-radius: 10px; overflow: hidden; background: var(--bg-subtle); border: 1px solid var(--border); display: none; }
+        .card-wrap.visible { display: block; }
+        .card-wrap img { width: 100%; display: block; max-height: 480px; object-fit: contain; background: #fafaf9; cursor: zoom-in; }
+
+        /* Records section */
+        .section-head { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 8px; gap: 8px; }
+        .section-head h2 { font-size: 15px; font-weight: 600; color: var(--text-muted); margin: 0; display: flex; align-items: center; gap: 8px; }
+        .section-head .count-pill { display: inline-flex; align-items: center; padding: 1px 8px; background: var(--hover); color: var(--text-muted); border-radius: 10px; font-size: 12px; font-weight: 500; }
+        .edit-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 120ms, color 120ms, border-color 120ms;
+        }
+        .edit-toggle:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
+        .edit-toggle.active { background: var(--accent); color: white; border-color: var(--accent); }
+        .edit-toggle.active:hover { background: #1e6fc2; border-color: #1e6fc2; }
+
+        /* Table */
+        .table-wrap { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: visible; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+
+        col.col-apt   { width: 18%; }
+        col.col-stat  { width: 24%; }
+        col.col-notes { width: 48%; }
+        col.col-act   { width: 10%; }
+
+        table.edit-mode col.col-apt    { width: 12%; }
+        table.edit-mode col.col-stat   { width: 16%; }
+        table.edit-mode col.col-street { width: 20%; }
+        table.edit-mode col.col-ent    { width: 14%; }
+        table.edit-mode col.col-notes  { width: 28%; }
+        table.edit-mode col.col-act    { width: 10%; }
+
+        @media (max-width: 640px) {
+            col.col-apt   { width: 22%; }
+            col.col-stat  { width: 32%; }
+            col.col-notes { width: 36%; }
+            col.col-act   { width: 10%; }
+            .table-wrap.edit-scroll { overflow-x: auto; }
+            table.edit-mode { min-width: 720px; }
+        }
+
+        thead th:first-child { border-top-left-radius: 10px; }
+        thead th:last-child  { border-top-right-radius: 10px; }
+        tbody tr:last-child td:first-child { border-bottom-left-radius: 10px; }
+        tbody tr:last-child td:last-child  { border-bottom-right-radius: 10px; }
+
+        thead th {
+            text-align: left;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-subtle);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            user-select: none;
+        }
+        thead th.sortable { cursor: pointer; transition: color 120ms, background 120ms; }
+        thead th.sortable:hover { color: var(--text); background: var(--hover); }
+        thead th .sort-indicator { display: inline-flex; align-items: center; margin-left: 4px; color: var(--text-faint); transition: color 120ms, transform 150ms; vertical-align: -2px; }
+        thead th.sorted .sort-indicator { color: var(--accent); }
+        thead th.sorted.desc .sort-indicator { transform: rotate(180deg); }
+        thead th:not(.sorted) .sort-indicator { opacity: 0.35; }
+
+        tbody td { padding: 0; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 14px; position: relative; }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover { background: var(--bg-subtle); }
+
+        .cell-text {
+            padding: 10px 12px;
+            min-height: 40px;
+            cursor: text;
+            outline: none;
+            word-break: break-word;
+            white-space: pre-wrap;
+            transition: box-shadow 120ms;
+            border-radius: 4px;
+        }
+        .cell-text:empty::before { content: attr(data-placeholder); color: var(--text-faint); pointer-events: none; }
+        .cell-text:focus { box-shadow: inset 0 0 0 2px var(--accent); background: var(--bg); }
+
+        /* Status cell */
+        .cell-status { padding: 8px 12px; position: relative; }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            user-select: none;
+            line-height: 18px;
+            transition: filter 120ms;
+        }
+        .status-pill:hover { filter: brightness(0.96); }
+        .status-pill.empty { background: transparent; color: var(--text-faint); border: 1px dashed var(--border-strong); }
+        .status-pill[data-color="gray"] { background: var(--gray-bg); color: var(--gray-fg); }
+        .status-pill[data-color="blue"] { background: var(--blue-bg); color: var(--blue-fg); }
+        .status-pill[data-color="red"]  { background: var(--red-bg);  color: var(--red-fg); }
+
+        .status-menu {
+            position: fixed;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            padding: 6px;
+            z-index: 150;
+            min-width: 160px;
+            display: none;
+        }
+        .status-menu.open { display: block; }
+        .status-menu .status-option { display: flex; align-items: center; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+        .status-menu .status-option:hover { background: var(--hover); }
+        .status-menu .status-option .status-pill { pointer-events: none; }
+
+        /* Actions */
+        .cell-actions { padding: 4px 8px; text-align: right; }
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            color: var(--text-muted);
+            opacity: 1;
+            transition: background 120ms, color 120ms;
+        }
+        .icon-btn:hover { background: var(--hover); color: var(--text); }
+        .icon-btn.danger:hover { background: var(--red-bg); color: var(--red-fg); }
+
+        /* Add row */
+        .add-row td { padding: 0; border-bottom: none; }
+        .add-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            text-align: left;
+            border-radius: 0 0 10px 10px;
+        }
+        .add-btn:hover { background: var(--hover); color: var(--text); }
+        .add-btn svg { flex-shrink: 0; }
+
+        /* Loading & empty */
+        .state { padding: 48px 24px; text-align: center; color: var(--text-muted); font-size: 14px; }
+        .state.error { color: var(--red-fg); }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -3px; margin-right: 8px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Sync indicator */
+        .sync-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); margin-left: 6px; transition: background 200ms; }
+        .sync-dot.saving { background: #f5b86e; animation: pulse 0.8s infinite; }
+        .sync-dot.saved  { background: #4ea35e; }
+        .sync-dot.error  { background: #c9534a; }
+        @keyframes pulse { 50% { opacity: 0.4; } }
+
+        /* Filter bars (street, entrance) */
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            margin: 0 0 8px;
+            padding: 4px;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .filter-bar + .filter-bar { margin-top: -4px; }
+        .filter-tab {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: transparent;
+            transition: background 120ms, color 120ms, box-shadow 120ms;
+            user-select: none;
+        }
+        .filter-tab:hover { background: var(--hover); color: var(--text); }
+        .filter-tab.active { background: var(--bg); color: var(--text); box-shadow: var(--shadow-sm); }
+        .filter-tab .filter-label { white-space: nowrap; }
+
+        /* Image lightbox */
+        .lightbox {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 15, 15, 0.85);
+            z-index: 200;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            cursor: zoom-out;
+        }
+        .lightbox.open { display: flex; }
+        .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--text);
+            color: white;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-size: 13px;
+            opacity: 0;
+            transition: opacity 200ms, transform 200ms;
+            pointer-events: none;
+            z-index: 300;
+            max-width: 90vw;
+            box-shadow: var(--shadow-lg);
+        }
+        .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .toast.error { background: #c9534a; }
+    </style>
+</head>
+<body>
+
+<!-- Splash (initial loading while we decide which screen to show) -->
+<div class="auth-screen" id="splashScreen">
+    <div class="spinner-lg"></div>
+</div>
+
+<!-- Login screen -->
+<div class="auth-screen" id="loginScreen" hidden>
+    <div class="auth-card">
+        <div class="icon-circle">📋</div>
+        <h1>Робоча панель</h1>
+        <p>Увійдіть через Google, щоб продовжити</p>
+        <div id="googleBtn"></div>
+    </div>
+</div>
+
+<!-- Access-pending screen -->
+<div class="auth-screen" id="pendingScreen" hidden>
+    <div class="auth-card">
+        <img id="pendingAvatar" class="avatar" alt="" src="">
+        <h1>Очікування доступу</h1>
+        <div class="user-meta"  id="pendingName"></div>
+        <div class="user-email" id="pendingEmail"></div>
+        <p>Адміністратор має підтвердити ваш доступ у Notion. Це робиться вручну.</p>
+        <div class="auth-actions">
+            <button class="auth-btn primary" onclick="refreshAccess()">Перевірити ще раз</button>
+            <button class="auth-btn ghost"   onclick="signOut()">Вийти</button>
+        </div>
+    </div>
+</div>
+
+<!-- App -->
+<div class="app" id="appScreen" hidden>
+    <div class="header">
+        <span class="header-icon">📋</span>
+        <h1>Робоча панель</h1>
+        <span id="syncDot" class="sync-dot" title=""></span>
+        <span class="header-spacer"></span>
+        <div class="user-chip" id="userChip" hidden></div>
+    </div>
+    <p class="subtitle" id="subtitle">Виберіть територію, щоб переглянути записи</p>
+
+    <div class="territory-bar">
+        <div class="selector" id="territorySelector">
+            <button class="selector-trigger" id="territoryTrigger" type="button">
+                <span><span class="label-prefix">Територія</span><span id="territoryLabel">—</span></span>
+                <svg class="arrow" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div class="selector-menu" id="territoryMenu"></div>
+        </div>
+    </div>
+
+    <div class="card-wrap" id="cardWrap">
+        <img id="cardImg" alt="Картка території">
+    </div>
+
+    <div class="section-head">
+        <h2>Записи <span class="count-pill" id="recordsCount">0</span></h2>
+        <button class="edit-toggle" id="editToggle" type="button" aria-pressed="false">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M11.3 2.7l2 2L5.3 12.7l-2.8.3.3-2.8 8.5-7.5z"
+                      stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span id="editToggleLabel">Редагувати</span>
+        </button>
+    </div>
+
+    <div class="filter-bar" id="streetBar"   hidden></div>
+    <div class="filter-bar" id="entranceBar" hidden></div>
+
+    <div class="table-wrap" id="tableWrap">
+        <div class="state">Оберіть територію вгорі.</div>
+    </div>
+</div>
+
+<div class="lightbox" id="lightbox">
+    <img id="lightboxImg" alt="">
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+ * Configuration
+ *
+ * Fill in GOOGLE_CLIENT_ID below with your OAuth 2.0 Web Client ID
+ * (from https://console.cloud.google.com → APIs & Services → Credentials).
+ * It is public — safe to ship in this HTML.
+ * ============================================================ */
+const API_URL          = "https://divine-forest-e245.maksym-pelishko.workers.dev";
+const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+
+const STATUS_OPTIONS = [
+    { name: "НД",       color: "gray" },
+    { name: "Повторна", color: "blue" },
+    { name: "Відмова",  color: "red"  }
+];
+const DEFAULT_STATUS = STATUS_OPTIONS[0].name;
+
+const LS = {
+    token:     "auth.idToken",
+    user:      "auth.user",
+    territory: "ministry.lastTerritory"
+};
+
+const state = {
+    auth: { token: null, user: null, hasAccess: false },
+    territories: [],
+    currentTerritoryId: null,
+    records: [],
+    saving: 0,
+    currentEntrance: null,
+    currentStreet:   null,
+    sort: { field: 'apartment', dir: 'asc' },
+    editMode: false
+};
+
+let pendingCredentialCallback = null;
+
+/* ============================================================
+ * Auth — storage
+ * ============================================================ */
+function loadStoredAuth() {
+    state.auth.token = localStorage.getItem(LS.token);
+    try { state.auth.user = JSON.parse(localStorage.getItem(LS.user) || 'null'); }
+    catch { state.auth.user = null; }
+}
+function saveAuth(token, user, hasAccess) {
+    state.auth.token     = token;
+    state.auth.user      = user;
+    state.auth.hasAccess = !!hasAccess;
+    localStorage.setItem(LS.token, token);
+    localStorage.setItem(LS.user,  JSON.stringify(user));
+}
+function clearAuth() {
+    state.auth = { token: null, user: null, hasAccess: false };
+    localStorage.removeItem(LS.token);
+    localStorage.removeItem(LS.user);
+    if (window.google?.accounts?.id) {
+        try { google.accounts.id.disableAutoSelect(); } catch {}
+    }
+}
+
+/* ============================================================
+ * Auth — Google Identity Services
+ * ============================================================ */
+async function whenGoogleReady() {
+    if (window.google?.accounts?.id) return;
+    await new Promise(resolve => {
+        const i = setInterval(() => {
+            if (window.google?.accounts?.id) { clearInterval(i); resolve(); }
+        }, 50);
+        setTimeout(() => { clearInterval(i); resolve(); }, 8000);
+    });
+}
+
+async function initGoogleSignIn() {
+    await whenGoogleReady();
+    if (!window.google?.accounts?.id) return;
+    google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback:  handleCredentialResponse,
+        auto_select: true,
+        cancel_on_tap_outside: false,
+        use_fedcm_for_prompt: true
+    });
+    const btnEl = document.getElementById('googleBtn');
+    if (btnEl) {
+        google.accounts.id.renderButton(btnEl, {
+            theme: 'outline', size: 'large',
+            text: 'signin_with', shape: 'rectangular',
+            logo_alignment: 'left'
+        });
+    }
+}
+
+async function handleCredentialResponse(response) {
+    const idToken = response.credential;
+    try {
+        const r = await fetch(`${API_URL}/auth/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idToken })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            showToast(data.error || `HTTP ${r.status}`, true);
+            return;
+        }
+        saveAuth(idToken, data.user, data.hasAccess);
+
+        if (pendingCredentialCallback) {
+            const cb = pendingCredentialCallback;
+            pendingCredentialCallback = null;
+            cb({ idToken, hasAccess: data.hasAccess });
+            return;
+        }
+        if (data.hasAccess) showApp();
+        else                showAccessPending();
+    } catch (e) {
+        showToast(`Помилка входу: ${e.message}`, true);
+    }
+}
+
+function trySilentRefresh() {
+    if (!window.google?.accounts?.id) return Promise.resolve(null);
+    return new Promise(resolve => {
+        let done = false;
+        const finish = (value) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timeout);
+            if (pendingCredentialCallback === handler) pendingCredentialCallback = null;
+            resolve(value);
+        };
+        const handler = (result) => finish(result?.idToken || null);
+        pendingCredentialCallback = handler;
+        const timeout = setTimeout(() => finish(null), 4500);
+        try {
+            google.accounts.id.prompt((notification) => {
+                if (notification.isNotDisplayed?.() ||
+                    notification.isSkippedMoment?.() ||
+                    notification.isDismissedMoment?.()) {
+                    finish(null);
+                }
+            });
+        } catch { finish(null); }
+    });
+}
+
+/* ============================================================
+ * API helper (auth-aware, with one silent-refresh retry on 401)
+ * ============================================================ */
+async function api(path, opts) {
+    const doFetch = (token) => fetch(`${API_URL}${path}`, {
+        method: opts?.method || 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: opts?.body ? JSON.stringify(opts.body) : undefined
+    });
+
+    let res = await doFetch(state.auth.token);
+
+    if (res.status === 401) {
+        const newToken = await trySilentRefresh();
+        if (newToken) res = await doFetch(newToken);
+    }
+
+    if (res.status === 401) {
+        clearAuth();
+        showLogin();
+        throw new Error('Не авторизовано');
+    }
+    if (res.status === 403) {
+        const data = await res.json().catch(() => ({}));
+        state.auth.hasAccess = false;
+        if (data.user) {
+            state.auth.user = data.user;
+            localStorage.setItem(LS.user, JSON.stringify(data.user));
+        }
+        showAccessPending();
+        throw new Error('Очікування доступу');
+    }
+    if (!res.ok) {
+        const text = await res.text();
+        let msg = text;
+        try { msg = JSON.parse(text).error || msg; } catch {}
+        throw new Error(msg || `HTTP ${res.status}`);
+    }
+    return res.json();
+}
+
+/* ============================================================
+ * Screen routing
+ * ============================================================ */
+function showOnly(screenId) {
+    for (const id of ['splashScreen', 'loginScreen', 'pendingScreen', 'appScreen']) {
+        document.getElementById(id).hidden = (id !== screenId);
+    }
+}
+function showSplash()        { showOnly('splashScreen'); }
+function showLogin()         { showOnly('loginScreen'); }
+function showAccessPending() { showOnly('pendingScreen'); renderPendingScreen(); }
+function showApp()           { showOnly('appScreen'); renderUserChip(); init(); }
+
+function renderPendingScreen() {
+    const u = state.auth.user || {};
+    const av = document.getElementById('pendingAvatar');
+    if (u.picture) { av.src = u.picture; av.hidden = false; } else { av.hidden = true; }
+    document.getElementById('pendingName').textContent  = u.name  || '';
+    document.getElementById('pendingEmail').textContent = u.email || '';
+}
+
+function renderUserChip() {
+    const chip = document.getElementById('userChip');
+    const u = state.auth.user;
+    if (!u) { chip.hidden = true; chip.innerHTML = ''; return; }
+    chip.hidden = false;
+    chip.innerHTML = `
+        ${u.picture ? `<img src="${escapeHtml(u.picture)}" alt="" class="user-avatar">` : ''}
+        <span class="user-name" title="${escapeHtml(u.email || '')}">${escapeHtml(u.name || u.email || '')}</span>
+        <button class="user-logout" title="Вийти" aria-label="Вийти" onclick="signOut()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H7"
+                      stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+    `;
+}
+
+window.signOut = function() { clearAuth(); showLogin(); };
+
+window.refreshAccess = async function() {
+    if (!state.auth.token) { showLogin(); return; }
+    try {
+        const res = await fetch(`${API_URL}/me`, {
+            headers: { 'Authorization': `Bearer ${state.auth.token}` }
+        });
+        if (res.status === 401) {
+            const newToken = await trySilentRefresh();
+            if (!newToken) { clearAuth(); showLogin(); return; }
+            return refreshAccess();
+        }
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403) {
+            if (data.user) {
+                state.auth.user = data.user;
+                localStorage.setItem(LS.user, JSON.stringify(data.user));
+                renderPendingScreen();
+            }
+            showToast('Доступ ще не наданий');
+            return;
+        }
+        if (!res.ok) {
+            showToast(data.error || `HTTP ${res.status}`, true);
+            return;
+        }
+        state.auth.user = data.user;
+        state.auth.hasAccess = data.hasAccess;
+        localStorage.setItem(LS.user, JSON.stringify(data.user));
+        if (data.hasAccess) showApp();
+        else { renderPendingScreen(); showToast('Доступ ще не наданий'); }
+    } catch (e) {
+        showToast(`Помилка: ${e.message}`, true);
+    }
+};
+
+/* ============================================================
+ * Bootstrap
+ * ============================================================ */
+async function bootstrap() {
+    showSplash();
+    loadStoredAuth();
+    await initGoogleSignIn();
+
+    if (state.auth.token) {
+        try {
+            const res = await fetch(`${API_URL}/me`, {
+                headers: { 'Authorization': `Bearer ${state.auth.token}` }
+            });
+            if (res.status === 401) {
+                clearAuth();
+                const newToken = await trySilentRefresh();
+                if (newToken) return;
+                showLogin();
+                if (window.google?.accounts?.id) { try { google.accounts.id.prompt(); } catch {} }
+                return;
+            }
+            const data = await res.json().catch(() => ({}));
+            if (res.status === 403) {
+                if (data.user) {
+                    state.auth.user = data.user;
+                    localStorage.setItem(LS.user, JSON.stringify(data.user));
+                }
+                showAccessPending();
+                return;
+            }
+            if (res.ok) {
+                state.auth.user = data.user;
+                state.auth.hasAccess = data.hasAccess;
+                localStorage.setItem(LS.user, JSON.stringify(data.user));
+                if (data.hasAccess) showApp();
+                else                showAccessPending();
+                return;
+            }
+            showToast(`Помилка: HTTP ${res.status}`, true);
+            showLogin();
+        } catch (e) {
+            showToast(`Не вдалося з'єднатися: ${e.message}`, true);
+            showLogin();
+        }
+    } else {
+        showLogin();
+        if (window.google?.accounts?.id) { try { google.accounts.id.prompt(); } catch {} }
+    }
+}
+
+/* ============================================================
+ * App init (after sign-in + access granted)
+ * ============================================================ */
+async function init() {
+    try {
+        await loadTerritories();
+        const saved   = localStorage.getItem(LS.territory);
+        const initial = state.territories.find(t => t.id === saved) || state.territories[0];
+        if (initial) {
+            await selectTerritory(initial.id);
+        } else {
+            document.getElementById('subtitle').textContent = "У базі немає територій. Додайте їх у Notion.";
+            document.getElementById('tableWrap').innerHTML = '<div class="state">Немає територій</div>';
+        }
+    } catch (e) {
+        if (e.message === 'Не авторизовано' || e.message === 'Очікування доступу') return;
+        console.error(e);
+        document.getElementById('tableWrap').innerHTML =
+            `<div class="state error">Не вдалося завантажити дані: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+/* ============================================================
+ * Sync indicator + toast
+ * ============================================================ */
+function setSync(stateName, message) {
+    const dot = document.getElementById('syncDot');
+    dot.classList.remove('saving', 'saved', 'error');
+    if (stateName) dot.classList.add(stateName);
+    dot.title = message || "";
+    if (stateName === 'saved') {
+        setTimeout(() => { if (dot.classList.contains('saved')) dot.classList.remove('saved'); }, 1500);
+    }
+}
+function showToast(message, isError = false) {
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.classList.toggle('error', isError);
+    el.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+/* ============================================================
+ * Territories
+ * ============================================================ */
+async function loadTerritories() {
+    const data = await api('/territories');
+    state.territories = data.territories || [];
+    renderTerritoryMenu();
+}
+
+function renderTerritoryMenu() {
+    const menu = document.getElementById('territoryMenu');
+    if (!state.territories.length) {
+        menu.innerHTML = '<div class="selector-item-empty">Територій не знайдено</div>';
+        return;
+    }
+    menu.innerHTML = state.territories.map(t => `
+        <div class="selector-item${t.id === state.currentTerritoryId ? ' active' : ''}" data-id="${t.id}">
+            <span style="flex:1">${escapeHtml(t.name)}</span>
+            <svg class="check" width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M3 8l3 3 7-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </div>
+    `).join('');
+    menu.querySelectorAll('.selector-item').forEach(el => {
+        el.addEventListener('click', () => {
+            closeSelector();
+            selectTerritory(el.dataset.id);
+        });
+    });
+}
+
+function openSelector()   { document.getElementById('territorySelector').classList.add('open'); }
+function closeSelector()  { document.getElementById('territorySelector').classList.remove('open'); }
+function toggleSelector() { document.getElementById('territorySelector').classList.toggle('open'); }
+
+document.getElementById('territoryTrigger').addEventListener('click', toggleSelector);
+document.addEventListener('click', e => {
+    if (!document.getElementById('territorySelector').contains(e.target)) closeSelector();
+});
+
+async function selectTerritory(id) {
+    state.currentTerritoryId = id;
+    state.currentStreet   = null;
+    state.currentEntrance = null;
+    localStorage.setItem(LS.territory, id);
+    const t = state.territories.find(x => x.id === id);
+    document.getElementById('territoryLabel').textContent = t?.name || "—";
+    document.getElementById('subtitle').textContent       = t?.name || "";
+
+    renderTerritoryMenu();
+    renderCard(t);
+    document.getElementById('streetBar').hidden   = true;
+    document.getElementById('entranceBar').hidden = true;
+    document.getElementById('tableWrap').innerHTML =
+        '<div class="state"><span class="spinner"></span>Завантаження записів…</div>';
+    try {
+        await loadRecords();
+    } catch (e) {
+        if (e.message === 'Не авторизовано' || e.message === 'Очікування доступу') return;
+        console.error(e);
+        document.getElementById('tableWrap').innerHTML =
+            `<div class="state error">Помилка: ${escapeHtml(e.message)}</div>`;
+    }
+}
+
+function renderCard(t) {
+    const wrap = document.getElementById('cardWrap');
+    const img  = document.getElementById('cardImg');
+    if (t?.card) {
+        img.src = t.card;
+        wrap.classList.add('visible');
+        img.onclick = () => openLightbox(t.card);
+    } else {
+        wrap.classList.remove('visible');
+        img.removeAttribute('src');
+    }
+}
+
+/* ============================================================
+ * Records — load
+ * ============================================================ */
+async function loadRecords() {
+    const data = await api(`/territories/${state.currentTerritoryId}/records`);
+    state.records = data.records || [];
+    pickDefaultStreet();
+    pickDefaultEntrance();
+    sortRecords();
+    renderStreetBar();
+    renderEntranceBar();
+    renderRecords();
+}
+
+function recordsInCurrentStreet() {
+    if (state.currentStreet === null) return state.records;
+    return state.records.filter(r => (r.street || '') === state.currentStreet);
+}
+function pickDefaultStreet() {
+    const real = [...new Set(state.records.map(r => r.street).filter(Boolean))].sort(naturalCompare);
+    state.currentStreet = real.length > 0 ? real[0] : null;
+}
+function pickDefaultEntrance() {
+    const scoped = recordsInCurrentStreet();
+    const real = [...new Set(scoped.map(r => r.entrance).filter(Boolean))].sort(naturalCompare);
+    state.currentEntrance = real.length > 0 ? real[0] : null;
+}
+
+/* ============================================================
+ * Sort
+ * ============================================================ */
+function naturalCompare(a, b) {
+    const aa = (a || '').toString();
+    const bb = (b || '').toString();
+    const an = aa.match(/^\d+/);
+    const bn = bb.match(/^\d+/);
+    if (an && bn) {
+        const d = parseInt(an[0], 10) - parseInt(bn[0], 10);
+        if (d !== 0) return d;
+    } else if (an) return -1;
+    else if (bn) return 1;
+    return aa.localeCompare(bb, 'uk');
+}
+function compareApartment(a, b) { return naturalCompare(a.apartment, b.apartment); }
+function compareStatus(a, b) {
+    const ai = a.status ? STATUS_OPTIONS.findIndex(o => o.name === a.status) : Infinity;
+    const bi = b.status ? STATUS_OPTIONS.findIndex(o => o.name === b.status) : Infinity;
+    if (ai !== bi) return ai - bi;
+    return compareApartment(a, b);
+}
+function sortRecords() {
+    const cmp = state.sort.field === 'status' ? compareStatus : compareApartment;
+    state.records.sort(cmp);
+    if (state.sort.dir === 'desc') state.records.reverse();
+}
+function toggleSort(field) {
+    if (state.sort.field === field) {
+        state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.sort.field = field;
+        state.sort.dir = 'asc';
+    }
+    sortRecords();
+    renderRecords();
+}
+
+/* ============================================================
+ * Filter bars
+ * ============================================================ */
+function computeTabs(records, field, currentValue) {
+    const realSet = new Set();
+    let hasEmpty = false;
+    for (const r of records) {
+        if (r[field]) realSet.add(r[field]);
+        else hasEmpty = true;
+    }
+    if (currentValue && !realSet.has(currentValue)) realSet.add(currentValue);
+    const tabs = [...realSet].sort(naturalCompare);
+    if (tabs.length > 0 && hasEmpty) tabs.push('');
+    return tabs;
+}
+function getStreetTabs()   { return computeTabs(state.records, 'street', state.currentStreet); }
+function getEntranceTabs() { return computeTabs(recordsInCurrentStreet(), 'entrance', state.currentEntrance); }
+
+function visibleRecords() {
+    if (state.editMode) return state.records;
+    let recs = state.records;
+    if (state.currentStreet   !== null) recs = recs.filter(r => (r.street   || '') === state.currentStreet);
+    if (state.currentEntrance !== null) recs = recs.filter(r => (r.entrance || '') === state.currentEntrance);
+    return recs;
+}
+
+function renderStreetBar() {
+    renderFilterBar({
+        containerId:  'streetBar',
+        tabs:         state.editMode ? [] : getStreetTabs(),
+        currentValue: state.currentStreet,
+        prefix:       'Вулиця ',
+        onSelect:     selectStreet
+    });
+}
+function renderEntranceBar() {
+    renderFilterBar({
+        containerId:  'entranceBar',
+        tabs:         state.editMode ? [] : getEntranceTabs(),
+        currentValue: state.currentEntrance,
+        prefix:       "Під'їзд ",
+        onSelect:     selectEntrance
+    });
+}
+function renderFilterBar({ containerId, tabs, currentValue, prefix, onSelect }) {
+    const bar = document.getElementById(containerId);
+    const hasReal = tabs.some(t => t !== '');
+    if (!hasReal) {
+        bar.hidden = true;
+        bar.innerHTML = '';
+        return;
+    }
+    let html = '';
+    for (const t of tabs) {
+        const isOthers = t === '';
+        const label    = isOthers ? 'Інші' : `${prefix}${t}`;
+        const isActive = currentValue === t;
+        html += `
+            <div class="filter-tab${isActive ? ' active' : ''}" data-value="${escapeHtml(t)}">
+                <span class="filter-label">${escapeHtml(label)}</span>
+            </div>
+        `;
+    }
+    bar.innerHTML = html;
+    bar.hidden = false;
+    bar.querySelectorAll('.filter-tab').forEach(el => {
+        el.addEventListener('click', () => onSelect(el.dataset.value));
+    });
+}
+
+function selectStreet(value) {
+    state.currentStreet = value;
+    pickDefaultEntrance();
+    renderStreetBar();
+    renderEntranceBar();
+    renderRecords();
+}
+function selectEntrance(value) {
+    state.currentEntrance = value;
+    renderEntranceBar();
+    renderRecords();
+}
+
+function normalizeFilter(field, currentKey, scopedRecords) {
+    const recs       = scopedRecords || state.records;
+    const realValues = new Set(recs.map(r => r[field]).filter(Boolean));
+    const hasEmpty   = recs.some(r => !r[field]);
+    const cur        = state[currentKey];
+    if (cur && realValues.has(cur)) return;
+    if (cur === '' && hasEmpty) return;
+    state[currentKey] = realValues.size > 0
+        ? [...realValues].sort(naturalCompare)[0]
+        : null;
+}
+
+/* ============================================================
+ * Edit mode toggle
+ * ============================================================ */
+function toggleEditMode() {
+    state.editMode = !state.editMode;
+    if (!state.editMode) {
+        normalizeFilter('street',   'currentStreet');
+        normalizeFilter('entrance', 'currentEntrance', recordsInCurrentStreet());
+    }
+    const btn = document.getElementById('editToggle');
+    btn.classList.toggle('active', state.editMode);
+    btn.setAttribute('aria-pressed', String(state.editMode));
+    document.getElementById('editToggleLabel').textContent = state.editMode ? 'Готово' : 'Редагувати';
+    renderStreetBar();
+    renderEntranceBar();
+    renderRecords();
+}
+document.getElementById('editToggle').addEventListener('click', toggleEditMode);
+
+/* ============================================================
+ * Records table
+ * ============================================================ */
+function renderRecords() {
+    const records = visibleRecords();
+    document.getElementById('recordsCount').textContent = records.length;
+
+    const rows = records.map(rec => renderRow(rec)).join('');
+    const colspan = state.editMode ? 6 : 4;
+    const addBtn = `
+        <tr class="add-row">
+            <td colspan="${colspan}">
+                <button class="add-btn" onclick="addRecord()">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                    </svg>
+                    Додати запис
+                </button>
+            </td>
+        </tr>
+    `;
+
+    const { field: sf, dir: sd } = state.sort;
+    const sortIcon = `<span class="sort-indicator"><svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+        <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg></span>`;
+    const hClass = (f) => `sortable${sf === f ? ' sorted ' + sd : ''}`;
+
+    const cols = state.editMode
+        ? `<col class="col-apt"><col class="col-stat"><col class="col-street"><col class="col-ent"><col class="col-notes"><col class="col-act">`
+        : `<col class="col-apt"><col class="col-stat"><col class="col-notes"><col class="col-act">`;
+    const editTh = state.editMode ? `<th>Вулиця</th><th>Під'їзд</th>` : '';
+
+    const wrap = document.getElementById('tableWrap');
+    wrap.classList.toggle('edit-scroll', state.editMode);
+    wrap.innerHTML = `
+        <table class="${state.editMode ? 'edit-mode' : ''}">
+            <colgroup>${cols}</colgroup>
+            <thead>
+                <tr>
+                    <th class="${hClass('apartment')}" data-sort="apartment">Кв./Буд.${sortIcon}</th>
+                    <th class="${hClass('status')}"    data-sort="status">Статус${sortIcon}</th>
+                    ${editTh}
+                    <th>Нотатки</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>${rows}${addBtn}</tbody>
+        </table>
+    `;
+
+    document.querySelectorAll('thead th.sortable').forEach(th => {
+        th.addEventListener('click', () => toggleSort(th.dataset.sort));
+    });
+
+    bindRowHandlers();
+}
+
+function renderRow(rec) {
+    const statusName = rec.status || DEFAULT_STATUS;
+    const color = statusColor(statusName);
+    const statusHtml = `<span class="status-pill" data-color="${color}">${escapeHtml(statusName)}</span>`;
+    const editCells = state.editMode ? `
+        <td>
+            <div class="cell-text" contenteditable="true" data-field="street"
+                 data-placeholder="—">${escapeHtml(rec.street)}</div>
+        </td>
+        <td>
+            <div class="cell-text" contenteditable="true" data-field="entrance"
+                 data-placeholder="—">${escapeHtml(rec.entrance)}</div>
+        </td>
+    ` : '';
+    return `
+        <tr data-id="${rec.id}">
+            <td>
+                <div class="cell-text" contenteditable="true" data-field="apartment"
+                     data-placeholder="—">${escapeHtml(rec.apartment)}</div>
+            </td>
+            <td class="cell-status">
+                <div class="status-trigger" data-field="status">${statusHtml}</div>
+                <div class="status-menu">
+                    ${STATUS_OPTIONS.map(o => `
+                        <div class="status-option" data-value="${o.name}">
+                            <span class="status-pill" data-color="${o.color}">${escapeHtml(o.name)}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </td>
+            ${editCells}
+            <td>
+                <div class="cell-text" contenteditable="true" data-field="notes"
+                     data-placeholder="Додати нотатки…">${escapeHtml(rec.notes)}</div>
+            </td>
+            <td class="cell-actions">
+                <button class="icon-btn danger" title="Видалити" data-action="delete">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 5h10M6.5 5V3.5A.5.5 0 0 1 7 3h2a.5.5 0 0 1 .5.5V5M5 5l.5 8a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1L11 5"
+                              stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </td>
+        </tr>
+    `;
+}
+
+function statusColor(name) {
+    return STATUS_OPTIONS.find(o => o.name === name)?.color || 'gray';
+}
+
+function bindRowHandlers() {
+    document.querySelectorAll('tr[data-id]').forEach(tr => {
+        const id = tr.dataset.id;
+
+        tr.querySelectorAll('.cell-text').forEach(el => {
+            const field   = el.dataset.field;
+            const initial = el.textContent;
+            el.dataset.initial = initial;
+
+            el.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    el.blur();
+                } else if (e.key === 'Escape') {
+                    el.textContent = el.dataset.initial;
+                    el.blur();
+                }
+            });
+            el.addEventListener('blur', () => {
+                const value = el.textContent.trim();
+                if (value === el.dataset.initial) return;
+                el.dataset.initial = value;
+                saveField(id, field, value);
+            });
+        });
+
+        const statusTrigger = tr.querySelector('.status-trigger');
+        const statusMenu    = tr.querySelector('.status-menu');
+        statusTrigger.addEventListener('click', e => {
+            e.stopPropagation();
+            if (statusMenu.classList.contains('open')) closeStatusMenu(statusMenu);
+            else                                      openStatusMenu(statusTrigger, statusMenu);
+        });
+        statusMenu.querySelectorAll('.status-option').forEach(opt => {
+            opt.addEventListener('click', e => {
+                e.stopPropagation();
+                const value = opt.dataset.value;
+                closeStatusMenu(statusMenu);
+                saveField(id, 'status', value);
+            });
+        });
+
+        tr.querySelector('[data-action="delete"]').addEventListener('click', () => deleteRecord(id));
+    });
+}
+
+/* ============================================================
+ * Status menu (fixed-positioned)
+ * ============================================================ */
+let activeStatusMenu = null;
+function openStatusMenu(trigger, menu) {
+    closeAllStatusMenus(menu);
+    menu.classList.add('open');
+    const tRect = trigger.getBoundingClientRect();
+    menu.style.left = tRect.left + 'px';
+    menu.style.top  = (tRect.bottom + 4) + 'px';
+    const mRect = menu.getBoundingClientRect();
+    if (tRect.bottom + mRect.height + 12 > window.innerHeight) {
+        menu.style.top = Math.max(8, tRect.top - mRect.height - 4) + 'px';
+    }
+    const overflowRight = (tRect.left + mRect.width) - (window.innerWidth - 8);
+    if (overflowRight > 0) {
+        menu.style.left = Math.max(8, tRect.left - overflowRight) + 'px';
+    }
+    activeStatusMenu = menu;
+}
+function closeStatusMenu(menu) {
+    menu.classList.remove('open');
+    if (activeStatusMenu === menu) activeStatusMenu = null;
+}
+function closeAllStatusMenus(except) {
+    document.querySelectorAll('.status-menu.open').forEach(m => { if (m !== except) closeStatusMenu(m); });
+}
+document.addEventListener('click', () => closeAllStatusMenus(null));
+window.addEventListener('scroll', () => { if (activeStatusMenu) closeStatusMenu(activeStatusMenu); }, true);
+window.addEventListener('resize', () => { if (activeStatusMenu) closeStatusMenu(activeStatusMenu); });
+
+/* ============================================================
+ * Mutations — save / create / delete
+ * ============================================================ */
+async function saveField(id, field, value) {
+    setSync('saving', 'Збереження…');
+    state.saving++;
+
+    const rec = state.records.find(r => r.id === id);
+    if (rec) rec[field] = value;
+    if (field === 'status') updateStatusCellUI(id, value);
+
+    try {
+        const data = await api(`/records/${id}`, {
+            method: 'PATCH',
+            body: { [field]: value }
+        });
+        if (data?.record) {
+            const i = state.records.findIndex(r => r.id === id);
+            if (i >= 0) state.records[i] = data.record;
+        }
+        state.saving--;
+        if (state.saving === 0) setSync('saved', 'Збережено');
+    } catch (e) {
+        state.saving--;
+        setSync('error', e.message);
+        showToast(`Помилка: ${e.message}`, true);
+        loadRecords().catch(console.error);
+    }
+}
+
+function updateStatusCellUI(id, value) {
+    const tr = document.querySelector(`tr[data-id="${id}"]`);
+    if (!tr) return;
+    const trigger = tr.querySelector('.status-trigger');
+    if (value) {
+        trigger.innerHTML = `<span class="status-pill" data-color="${statusColor(value)}">${escapeHtml(value)}</span>`;
+    } else {
+        trigger.innerHTML = `<span class="status-pill empty">Порожньо</span>`;
+    }
+}
+
+window.addRecord = async function() {
+    setSync('saving', 'Створення…');
+    try {
+        const body = {
+            apartment:   '',
+            status:      DEFAULT_STATUS,
+            territoryId: state.currentTerritoryId
+        };
+        if (state.currentStreet)   body.street   = state.currentStreet;
+        if (state.currentEntrance) body.entrance = state.currentEntrance;
+        const data = await api('/records', { method: 'POST', body });
+        state.records.push(data.record);
+        sortRecords();
+        renderStreetBar();
+        renderEntranceBar();
+        renderRecords();
+        setSync('saved', 'Створено');
+        const newCell = document.querySelector(`tr[data-id="${data.record.id}"] .cell-text[data-field="apartment"]`);
+        if (newCell) {
+            newCell.focus();
+            const range = document.createRange();
+            range.selectNodeContents(newCell);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    } catch (e) {
+        setSync('error', e.message);
+        showToast(`Не вдалося створити: ${e.message}`, true);
+    }
+};
+
+async function deleteRecord(id) {
+    const rec = state.records.find(r => r.id === id);
+    const label = rec?.apartment || 'цей запис';
+    if (!confirm(`Видалити «${label}»?`)) return;
+
+    const idx     = state.records.findIndex(r => r.id === id);
+    const removed = state.records.splice(idx, 1)[0];
+    renderStreetBar();
+    renderEntranceBar();
+    renderRecords();
+
+    setSync('saving', 'Видалення…');
+    try {
+        await api(`/records/${id}`, { method: 'DELETE' });
+        setSync('saved', 'Видалено');
+    } catch (e) {
+        state.records.splice(idx, 0, removed);
+        sortRecords();
+        renderStreetBar();
+        renderEntranceBar();
+        renderRecords();
+        setSync('error', e.message);
+        showToast(`Не вдалося видалити: ${e.message}`, true);
+    }
+}
+
+/* ============================================================
+ * Lightbox
+ * ============================================================ */
+function openLightbox(src) {
+    const lb = document.getElementById('lightbox');
+    document.getElementById('lightboxImg').src = src;
+    lb.classList.add('open');
+}
+document.getElementById('lightbox').addEventListener('click', () => {
+    document.getElementById('lightbox').classList.remove('open');
+});
+
+/* ============================================================
+ * Utils
+ * ============================================================ */
+function escapeHtml(s) {
+    return (s ?? '').toString().replace(/[&<>"']/g, c => ({
+        '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+    }[c]));
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+        closeSelector();
+        closeAllStatusMenus(null);
+        document.getElementById('lightbox').classList.remove('open');
+    }
+});
+
+window.addEventListener('load', bootstrap);
+</script>
+
+</body>
+</html>
