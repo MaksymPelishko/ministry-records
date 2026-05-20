@@ -57,3 +57,4 @@ $RECYCLE.BIN/
 *.lnk
 
 worker.js
+client_secret.json
