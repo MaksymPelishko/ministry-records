@@ -55,6 +55,3 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
-
-worker.js
-client_secret.json

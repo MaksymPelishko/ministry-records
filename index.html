@@ -140,6 +140,35 @@
             transition: background 120ms;
         }
         .user-chip:hover { background: var(--bg-subtle); }
+
+        /* Connection / sync status badge — fixed-positioned so it shows on every screen */
+        .net-badge {
+            position: fixed;
+            left: 12px;
+            bottom: 12px;
+            z-index: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 500;
+            background: var(--gray-bg);
+            color: var(--gray-fg);
+            user-select: none;
+            white-space: nowrap;
+            box-shadow: var(--shadow-sm);
+        }
+        .net-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+        .net-badge.offline { background: #fef3c7; color: #92400e; }
+        .net-badge.pending { background: var(--blue-bg); color: var(--blue-fg); }
+        .net-badge.pending .dot { animation: pulse 0.8s infinite; }
         .user-chip .user-avatar { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
         .user-chip .user-name {
             font-size: 13px;
@@ -434,10 +463,35 @@
             align-items: center;
             justify-content: center;
             padding: 24px;
-            cursor: zoom-out;
+            overflow: hidden;
+            touch-action: none;
         }
         .lightbox.open { display: flex; }
-        .lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; }
+        .lightbox img {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 4px;
+            user-select: none;
+            -webkit-user-drag: none;
+            -webkit-user-select: none;
+            transform: translate(var(--tx, 0px), var(--ty, 0px)) scale(var(--scale, 1));
+            transform-origin: center center;
+            transition: transform 150ms ease-out;
+            cursor: zoom-in;
+            touch-action: none;
+        }
+        .lightbox img.zoomed   { cursor: grab; }
+        .lightbox img.dragging { cursor: grabbing; transition: none; }
+        .lightbox-hint {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            pointer-events: none;
+            user-select: none;
+        }
 
         /* Toast */
         .toast {
@@ -463,6 +517,9 @@
 </head>
 <body>
 
+<!-- Floating connection / sync status badge — visible across all screens -->
+<div class="net-badge" id="netBadge" hidden></div>
+
 <!-- Splash (initial loading while we decide which screen to show) -->
 <div class="auth-screen" id="splashScreen">
     <div class="spinner-lg"></div>
@@ -472,9 +529,21 @@
 <div class="auth-screen" id="loginScreen" hidden>
     <div class="auth-card">
         <div class="icon-circle">📋</div>
-        <h1>Робоча панель</h1>
+        <h1>Нотатки</h1>
         <p>Увійдіть через Google, щоб продовжити</p>
         <div id="googleBtn"></div>
+    </div>
+</div>
+
+<!-- Offline, no cached data -->
+<div class="auth-screen" id="offlineNoDataScreen" hidden>
+    <div class="auth-card">
+        <div class="icon-circle">📡</div>
+        <h1>Немає з'єднання</h1>
+        <p>Підключіться до інтернету хоча б раз, щоб завантажити дані. Після цього додаток працюватиме й офлайн.</p>
+        <div class="auth-actions">
+            <button class="auth-btn primary" onclick="location.reload()">Спробувати знову</button>
+        </div>
     </div>
 </div>
 
@@ -497,7 +566,7 @@
 <div class="app" id="appScreen" hidden>
     <div class="header">
         <span class="header-icon">📋</span>
-        <h1>Робоча панель</h1>
+        <h1>Нотатки</h1>
         <span id="syncDot" class="sync-dot" title=""></span>
         <span class="header-spacer"></span>
         <div class="user-chip" id="userChip" hidden></div>
@@ -540,6 +609,7 @@
 </div>
 
 <div class="lightbox" id="lightbox">
+    <span class="lightbox-hint">Натисніть, щоб збільшити • колесо миші або жест двома пальцями для зміни масштабу</span>
     <img id="lightboxImg" alt="">
 </div>
 
@@ -582,6 +652,197 @@ const state = {
 };
 
 let pendingCredentialCallback = null;
+
+/* ============================================================
+ * Offline support
+ *   - Service worker keeps the app shell loadable when offline.
+ *   - territories + records are cached in localStorage so the UI
+ *     can paint immediately (online or offline).
+ *   - mutations (POST/PATCH/DELETE) made offline are queued and
+ *     replayed when navigator.onLine flips back to true.
+ *   - "Last write wins" — we don't surface conflicts.
+ * ============================================================ */
+
+// ---- Service worker registration ---------------------------------
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch((err) => {
+            console.warn('Service worker registration failed:', err);
+        });
+    });
+}
+
+// ---- Local cache helpers -----------------------------------------
+const OFFLINE_KEYS = {
+    territories: 'offline.territories',
+    records:     'offline.records.',   // + territoryId
+    queue:       'offline.queue'
+};
+
+function _readJson(k, fallback) {
+    try { const raw = localStorage.getItem(k); return raw == null ? fallback : JSON.parse(raw); }
+    catch { return fallback; }
+}
+function _writeJson(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
+}
+
+const offlineCache = {
+    territories()                    { return _readJson(OFFLINE_KEYS.territories, null); },
+    saveTerritories(t)               { _writeJson(OFFLINE_KEYS.territories, t); },
+    records(tid)                     { return _readJson(OFFLINE_KEYS.records + tid, null); },
+    saveRecords(tid, recs) {
+        // Strip transient fields before persisting
+        const cleaned = recs.map(({ _serverId, _pendingCreate, ...rest }) => ({
+            ...rest,
+            ...(_serverId ? { _serverId } : {})
+        }));
+        _writeJson(OFFLINE_KEYS.records + tid, cleaned);
+    }
+};
+
+// ---- Mutation queue ----------------------------------------------
+let mutationQueue   = _readJson(OFFLINE_KEYS.queue, []) || [];
+let isProcessingQueue = false;
+
+function persistQueue() { _writeJson(OFFLINE_KEYS.queue, mutationQueue); }
+
+function enqueueMutation(mut) {
+    mutationQueue.push({
+        id: `mut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: Date.now(),
+        ...mut
+    });
+    persistQueue();
+    renderConnectionStatus();
+}
+
+function isNetworkError(e) {
+    if (!navigator.onLine) return true;
+    const msg = (e?.message || '').toLowerCase();
+    return msg.includes('failed to fetch') ||
+           msg.includes('networkerror')   ||
+           msg.includes("can't connect")  ||
+           msg.includes('load failed');
+}
+
+// Try the network for a mutation; fall back to the queue if offline.
+async function mutateOrQueue({ method, path, body, recordId, tempId }) {
+    if (navigator.onLine) {
+        try {
+            return await api(path, { method, body });
+        } catch (e) {
+            if (isNetworkError(e)) {
+                enqueueMutation({ method, path, body, recordId, tempId });
+                return null;
+            }
+            throw e;
+        }
+    }
+    enqueueMutation({ method, path, body, recordId, tempId });
+    return null;
+}
+
+async function processQueue() {
+    if (isProcessingQueue || !navigator.onLine || mutationQueue.length === 0) return;
+    if (!state.auth.token) return;
+    isProcessingQueue = true;
+    renderConnectionStatus();
+
+    // Temp-id → real-id map, built as we POST. Subsequent PATCH/DELETE on the
+    // same record have their paths rewritten before going to the server.
+    const idMap = {};
+
+    try {
+        while (mutationQueue.length > 0) {
+            if (!navigator.onLine) break;
+            const m = mutationQueue[0];
+
+            let path = m.path;
+            // Resolve a temp record id in the path if a POST has already been replayed
+            if (m.recordId && m.recordId.startsWith('temp-')) {
+                const mapped = idMap[m.recordId];
+                if (mapped) {
+                    path = path.replace(m.recordId, mapped);
+                } else if (m.method !== 'POST') {
+                    // No POST yet → check live state in case the record was created online before
+                    const rec = state.records.find(r => r.id === m.recordId);
+                    if (rec?._serverId) {
+                        path = path.replace(m.recordId, rec._serverId);
+                    } else {
+                        // Cannot resolve — skip
+                        console.warn('Dropping orphan mutation (no real id):', m);
+                        mutationQueue.shift();
+                        persistQueue();
+                        continue;
+                    }
+                }
+            }
+
+            try {
+                const response = await api(path, { method: m.method, body: m.body });
+                if (m.method === 'POST' && m.tempId && response?.record) {
+                    idMap[m.tempId] = response.record.id;
+                    const rec = state.records.find(r => r.id === m.tempId);
+                    if (rec) rec._serverId = response.record.id;
+                }
+                mutationQueue.shift();
+                persistQueue();
+                renderConnectionStatus();
+            } catch (e) {
+                if (isNetworkError(e)) break;        // try later
+                console.warn('Mutation failed permanently, skipping:', m, e);
+                showToast(`Не вдалося синхронізувати: ${e.message}`, true);
+                mutationQueue.shift();
+                persistQueue();
+            }
+        }
+    } finally {
+        isProcessingQueue = false;
+        renderConnectionStatus();
+    }
+
+    // If the queue drained, refresh the data so the UI shows server-side state.
+    if (mutationQueue.length === 0 && navigator.onLine) {
+        try { await loadTerritories(); } catch {}
+        if (state.currentTerritoryId) { try { await loadRecords(); } catch {} }
+    }
+}
+
+// ---- Connection status -------------------------------------------
+function renderConnectionStatus() {
+    const badge = document.getElementById('netBadge');
+    if (!badge) return;
+    const offline = !navigator.onLine;
+    const pending = mutationQueue.length;
+    if (offline) {
+        badge.hidden = false;
+        badge.className = 'net-badge offline';
+        badge.innerHTML = `<span class="dot"></span> Офлайн${pending ? ` · ${pending} не́синхр.` : ''}`;
+    } else if (pending > 0) {
+        badge.hidden = false;
+        badge.className = 'net-badge pending';
+        badge.innerHTML = `<span class="dot"></span> ${pending} не́синхр.`;
+    } else {
+        badge.hidden = true;
+        badge.innerHTML = '';
+    }
+}
+
+window.addEventListener('online',  () => { renderConnectionStatus(); processQueue(); });
+window.addEventListener('offline', () => { renderConnectionStatus(); });
+
+// ---- Local JWT inspection (offline-only — server still verifies HMAC) ----
+function localTokenValid() {
+    if (!state.auth.token) return false;
+    try {
+        const p = state.auth.token.split('.')[1];
+        const payload = JSON.parse(atob(p.replace(/-/g, '+').replace(/_/g, '/')));
+        return payload.exp && payload.exp * 1000 > Date.now();
+    } catch { return false; }
+}
+
+function showOfflineNoData() { showOnly('offlineNoDataScreen'); renderConnectionStatus(); }
 
 /* ============================================================
  * Auth — storage
@@ -653,12 +914,16 @@ async function handleCredentialResponse(response) {
             showToast(data.error || `HTTP ${r.status}`, true);
             return;
         }
-        saveAuth(idToken, data.user, data.hasAccess);
+        if (!data.sessionToken) {
+            showToast('Сервер не повернув сесійний токен', true);
+            return;
+        }
+        saveAuth(data.sessionToken, data.user, data.hasAccess);
 
         if (pendingCredentialCallback) {
             const cb = pendingCredentialCallback;
             pendingCredentialCallback = null;
-            cb({ idToken, hasAccess: data.hasAccess });
+            cb({ sessionToken: data.sessionToken, hasAccess: data.hasAccess });
             return;
         }
         if (data.hasAccess) showApp();
@@ -679,7 +944,7 @@ function trySilentRefresh() {
             if (pendingCredentialCallback === handler) pendingCredentialCallback = null;
             resolve(value);
         };
-        const handler = (result) => finish(result?.idToken || null);
+        const handler = (result) => finish(result?.sessionToken || null);
         pendingCredentialCallback = handler;
         const timeout = setTimeout(() => finish(null), 4500);
         try {
@@ -742,14 +1007,21 @@ async function api(path, opts) {
  * Screen routing
  * ============================================================ */
 function showOnly(screenId) {
-    for (const id of ['splashScreen', 'loginScreen', 'pendingScreen', 'appScreen']) {
+    for (const id of ['splashScreen', 'loginScreen', 'pendingScreen', 'appScreen', 'offlineNoDataScreen']) {
         document.getElementById(id).hidden = (id !== screenId);
     }
 }
 function showSplash()        { showOnly('splashScreen'); }
 function showLogin()         { showOnly('loginScreen'); }
 function showAccessPending() { showOnly('pendingScreen'); renderPendingScreen(); }
-function showApp()           { showOnly('appScreen'); renderUserChip(); init(); }
+function showApp() {
+    showOnly('appScreen');
+    renderUserChip();
+    renderConnectionStatus();
+    init();
+    // Flush any mutations that were queued in a previous offline session.
+    if (navigator.onLine && mutationQueue.length > 0) processQueue();
+}
 
 function renderPendingScreen() {
     const u = state.auth.user || {};
@@ -819,6 +1091,21 @@ window.refreshAccess = async function() {
 async function bootstrap() {
     showSplash();
     loadStoredAuth();
+    renderConnectionStatus();
+
+    // Offline path: rely entirely on cached data + a locally-validatable JWT.
+    if (!navigator.onLine) {
+        const haveCache = offlineCache.territories() !== null;
+        if (state.auth.token && localTokenValid() && haveCache) {
+            // Assume access (was OK at last online check); /me will re-verify once we're back
+            state.auth.hasAccess = true;
+            showApp();
+        } else {
+            showOfflineNoData();
+        }
+        return;
+    }
+
     await initGoogleSignIn();
 
     if (state.auth.token) {
@@ -827,11 +1114,17 @@ async function bootstrap() {
                 headers: { 'Authorization': `Bearer ${state.auth.token}` }
             });
             if (res.status === 401) {
+                // Session expired — keep splash visible while we try a silent renewal.
+                // Don't clearAuth() yet (it disables auto_select and breaks silent flow).
+                const refreshed = await trySilentRefresh();
+                if (refreshed) {
+                    // handleCredentialResponse populated state.auth via saveAuth()
+                    if (state.auth.hasAccess) showApp();
+                    else                      showAccessPending();
+                    return;
+                }
                 clearAuth();
-                const newToken = await trySilentRefresh();
-                if (newToken) return;
                 showLogin();
-                if (window.google?.accounts?.id) { try { google.accounts.id.prompt(); } catch {} }
                 return;
             }
             const data = await res.json().catch(() => ({}));
@@ -854,6 +1147,12 @@ async function bootstrap() {
             showToast(`Помилка: HTTP ${res.status}`, true);
             showLogin();
         } catch (e) {
+            // Network died mid-bootstrap — fall back to the cache if we have one.
+            if (localTokenValid() && offlineCache.territories() !== null) {
+                state.auth.hasAccess = true;
+                showApp();
+                return;
+            }
             showToast(`Не вдалося з'єднатися: ${e.message}`, true);
             showLogin();
         }
@@ -910,9 +1209,25 @@ function showToast(message, isError = false) {
  * Territories
  * ============================================================ */
 async function loadTerritories() {
-    const data = await api('/territories');
-    state.territories = data.territories || [];
-    renderTerritoryMenu();
+    // Cache-first: paint immediately from localStorage so the UI is never blank.
+    const cached = offlineCache.territories();
+    if (cached) {
+        state.territories = cached;
+        renderTerritoryMenu();
+    }
+    if (!navigator.onLine) {
+        if (!cached) renderTerritoryMenu();
+        return;
+    }
+    try {
+        const data = await api('/territories');
+        state.territories = data.territories || [];
+        offlineCache.saveTerritories(state.territories);
+        renderTerritoryMenu();
+    } catch (e) {
+        if (!isNetworkError(e)) throw e;   // genuine errors still bubble
+        // network died — stay on the cached view
+    }
 }
 
 function renderTerritoryMenu() {
@@ -988,14 +1303,40 @@ function renderCard(t) {
  * Records — load
  * ============================================================ */
 async function loadRecords() {
-    const data = await api(`/territories/${state.currentTerritoryId}/records`);
-    state.records = data.records || [];
-    pickDefaultStreet();
-    pickDefaultEntrance();
-    sortRecords();
-    renderStreetBar();
-    renderEntranceBar();
-    renderRecords();
+    const tid    = state.currentTerritoryId;
+    const cached = offlineCache.records(tid);
+    if (cached) {
+        state.records = cached;
+        pickDefaultStreet();
+        pickDefaultEntrance();
+        sortRecords();
+        renderStreetBar();
+        renderEntranceBar();
+        renderRecords();
+    }
+    if (!navigator.onLine) {
+        if (!cached) {
+            state.records = [];
+            renderStreetBar();
+            renderEntranceBar();
+            renderRecords();
+        }
+        return;
+    }
+    try {
+        const data = await api(`/territories/${tid}/records`);
+        state.records = data.records || [];
+        offlineCache.saveRecords(tid, state.records);
+        pickDefaultStreet();
+        pickDefaultEntrance();
+        sortRecords();
+        renderStreetBar();
+        renderEntranceBar();
+        renderRecords();
+    } catch (e) {
+        if (!isNetworkError(e)) throw e;
+        // network died — keep showing cache
+    }
 }
 
 function recordsInCurrentStreet() {
@@ -1069,7 +1410,6 @@ function getStreetTabs()   { return computeTabs(state.records, 'street', state.c
 function getEntranceTabs() { return computeTabs(recordsInCurrentStreet(), 'entrance', state.currentEntrance); }
 
 function visibleRecords() {
-    if (state.editMode) return state.records;
     let recs = state.records;
     if (state.currentStreet   !== null) recs = recs.filter(r => (r.street   || '') === state.currentStreet);
     if (state.currentEntrance !== null) recs = recs.filter(r => (r.entrance || '') === state.currentEntrance);
@@ -1079,7 +1419,7 @@ function visibleRecords() {
 function renderStreetBar() {
     renderFilterBar({
         containerId:  'streetBar',
-        tabs:         state.editMode ? [] : getStreetTabs(),
+        tabs:         getStreetTabs(),
         currentValue: state.currentStreet,
         prefix:       'Вулиця ',
         onSelect:     selectStreet
@@ -1088,7 +1428,7 @@ function renderStreetBar() {
 function renderEntranceBar() {
     renderFilterBar({
         containerId:  'entranceBar',
-        tabs:         state.editMode ? [] : getEntranceTabs(),
+        tabs:         getEntranceTabs(),
         currentValue: state.currentEntrance,
         prefix:       "Під'їзд ",
         onSelect:     selectEntrance
@@ -1102,7 +1442,15 @@ function renderFilterBar({ containerId, tabs, currentValue, prefix, onSelect }) 
         bar.innerHTML = '';
         return;
     }
+    // "Всі" pill — only meaningful in edit mode and when there are ≥2 real options
     let html = '';
+    if (state.editMode && tabs.length >= 2) {
+        html += `
+            <div class="filter-tab${currentValue === null ? ' active' : ''}" data-value="__all__">
+                <span class="filter-label">Всі</span>
+            </div>
+        `;
+    }
     for (const t of tabs) {
         const isOthers = t === '';
         const label    = isOthers ? 'Інші' : `${prefix}${t}`;
@@ -1116,13 +1464,18 @@ function renderFilterBar({ containerId, tabs, currentValue, prefix, onSelect }) 
     bar.innerHTML = html;
     bar.hidden = false;
     bar.querySelectorAll('.filter-tab').forEach(el => {
-        el.addEventListener('click', () => onSelect(el.dataset.value));
+        el.addEventListener('click', () => {
+            const v = el.dataset.value;
+            onSelect(v === '__all__' ? null : v);
+        });
     });
 }
 
 function selectStreet(value) {
     state.currentStreet = value;
-    pickDefaultEntrance();
+    // "Всі" for street → also clear sub-filter so the user actually sees everything
+    if (value === null) state.currentEntrance = null;
+    else                pickDefaultEntrance();
     renderStreetBar();
     renderEntranceBar();
     renderRecords();
@@ -1193,7 +1546,7 @@ function renderRecords() {
     const hClass = (f) => `sortable${sf === f ? ' sorted ' + sd : ''}`;
 
     const cols = state.editMode
-        ? `<col class="col-apt"><col class="col-stat"><col class="col-street"><col class="col-ent"><col class="col-notes"><col class="col-act">`
+        ? `<col class="col-street"><col class="col-ent"><col class="col-apt"><col class="col-stat"><col class="col-notes"><col class="col-act">`
         : `<col class="col-apt"><col class="col-stat"><col class="col-notes"><col class="col-act">`;
     const editTh = state.editMode ? `<th>Вулиця</th><th>Під'їзд</th>` : '';
 
@@ -1204,9 +1557,9 @@ function renderRecords() {
             <colgroup>${cols}</colgroup>
             <thead>
                 <tr>
+                    ${editTh}
                     <th class="${hClass('apartment')}" data-sort="apartment">Кв./Буд.${sortIcon}</th>
                     <th class="${hClass('status')}"    data-sort="status">Статус${sortIcon}</th>
-                    ${editTh}
                     <th>Нотатки</th>
                     <th></th>
                 </tr>
@@ -1238,6 +1591,7 @@ function renderRow(rec) {
     ` : '';
     return `
         <tr data-id="${rec.id}">
+            ${editCells}
             <td>
                 <div class="cell-text" contenteditable="true" data-field="apartment"
                      data-placeholder="—">${escapeHtml(rec.apartment)}</div>
@@ -1252,7 +1606,6 @@ function renderRow(rec) {
                     `).join('')}
                 </div>
             </td>
-            ${editCells}
             <td>
                 <div class="cell-text" contenteditable="true" data-field="notes"
                      data-placeholder="Додати нотатки…">${escapeHtml(rec.notes)}</div>
@@ -1353,6 +1706,20 @@ window.addEventListener('resize', () => { if (activeStatusMenu) closeStatusMenu(
 /* ============================================================
  * Mutations — save / create / delete
  * ============================================================ */
+// Resolves to the Notion page id for a record — either immediately (the record
+// was loaded from the server, so rec.id is already the page id), or after the
+// background create POST finishes (for records added optimistically via the
+// Add button). Returns null if the create failed.
+async function getServerId(rec) {
+    if (!rec) return null;
+    if (rec._serverId) return rec._serverId;
+    if (rec._pendingCreate) {
+        try { return await rec._pendingCreate; }
+        catch { return null; }
+    }
+    return rec.id;
+}
+
 async function saveField(id, field, value) {
     setSync('saving', 'Збереження…');
     state.saving++;
@@ -1361,15 +1728,32 @@ async function saveField(id, field, value) {
     if (rec) rec[field] = value;
     if (field === 'status') updateStatusCellUI(id, value);
 
+    // Persist updated record set to the local cache immediately so a refresh /
+    // a future offline open shows the user's edits without a round-trip.
+    if (state.currentTerritoryId) {
+        offlineCache.saveRecords(state.currentTerritoryId, state.records);
+    }
+
     try {
-        const data = await api(`/records/${id}`, {
-            method: 'PATCH',
-            body: { [field]: value }
-        });
-        if (data?.record) {
-            const i = state.records.findIndex(r => r.id === id);
-            if (i >= 0) state.records[i] = data.record;
+        // Wait for any pending create. If it's a queued-offline create the
+        // promise resolves to `null` and we use the temp id in the path — the
+        // queue replay will rewrite it to the real Notion page id later.
+        let resolved;
+        if (rec?._pendingCreate) {
+            try { resolved = await rec._pendingCreate; }
+            catch {
+                state.saving--;
+                if (state.saving === 0) setSync(null);
+                return;
+            }
         }
+        const serverId = resolved || rec?._serverId || rec?.id || id;
+        await mutateOrQueue({
+            method:   'PATCH',
+            path:     `/records/${serverId}`,
+            body:     { [field]: value },
+            recordId: rec?.id || id
+        });
         state.saving--;
         if (state.saving === 0) setSync('saved', 'Збережено');
     } catch (e) {
@@ -1391,9 +1775,48 @@ function updateStatusCellUI(id, value) {
     }
 }
 
-window.addRecord = async function() {
+// Optimistic create: insert a placeholder row immediately so the user can
+// start typing right away. The POST runs in the background; its promise is
+// stashed on rec._pendingCreate so any subsequent save/delete on this row
+// awaits the real Notion page id before talking to the server.
+window.addRecord = function() {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const rec = {
+        id:        tempId,        // permanent local id — used for DOM data-id and state lookups
+        _serverId: null,          // populated when the POST resolves
+        _pendingCreate: null,     // promise resolved with the Notion page id
+        apartment: '',
+        status:    DEFAULT_STATUS,
+        notes:     '',
+        entrance:  state.currentEntrance || '',
+        street:    state.currentStreet   || ''
+    };
+    state.records.push(rec);
+    sortRecords();
+    renderStreetBar();
+    renderEntranceBar();
+    renderRecords();
+
+    // Focus the new row's apartment cell so the user can start typing.
+    // focus() scrolls the cell into view if it's off-screen.
+    const newCell = document.querySelector(`tr[data-id="${tempId}"] .cell-text[data-field="apartment"]`);
+    if (newCell) {
+        newCell.focus();
+        const range = document.createRange();
+        range.selectNodeContents(newCell);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+    // Persist the new placeholder to the local cache too
+    if (state.currentTerritoryId) {
+        offlineCache.saveRecords(state.currentTerritoryId, state.records);
+    }
+
     setSync('saving', 'Створення…');
-    try {
+    state.saving++;
+    rec._pendingCreate = (async () => {
         const body = {
             apartment:   '',
             status:      DEFAULT_STATUS,
@@ -1401,42 +1824,95 @@ window.addRecord = async function() {
         };
         if (state.currentStreet)   body.street   = state.currentStreet;
         if (state.currentEntrance) body.entrance = state.currentEntrance;
-        const data = await api('/records', { method: 'POST', body });
-        state.records.push(data.record);
-        sortRecords();
-        renderStreetBar();
-        renderEntranceBar();
-        renderRecords();
-        setSync('saved', 'Створено');
-        const newCell = document.querySelector(`tr[data-id="${data.record.id}"] .cell-text[data-field="apartment"]`);
-        if (newCell) {
-            newCell.focus();
-            const range = document.createRange();
-            range.selectNodeContents(newCell);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
+        try {
+            if (navigator.onLine) {
+                try {
+                    const data = await api('/records', { method: 'POST', body });
+                    rec._serverId = data.record.id;
+                    return data.record.id;
+                } catch (e) {
+                    if (!isNetworkError(e)) {
+                        // Genuine server error → roll back the placeholder
+                        const idx = state.records.findIndex(r => r.id === tempId);
+                        if (idx >= 0) state.records.splice(idx, 1);
+                        renderStreetBar();
+                        renderEntranceBar();
+                        renderRecords();
+                        if (state.currentTerritoryId) {
+                            offlineCache.saveRecords(state.currentTerritoryId, state.records);
+                        }
+                        showToast(`Не вдалося створити: ${e.message}`, true);
+                        throw e;
+                    }
+                    // Network died mid-POST → fall through to queue
+                }
+            }
+            // Offline (or network died) → queue the POST. The temp id stays
+            // in state; the queue replay will fill in _serverId on success.
+            enqueueMutation({
+                method:   'POST',
+                path:     '/records',
+                body,
+                tempId,
+                recordId: tempId
+            });
+            return null;
+        } finally {
+            rec._pendingCreate = null;
+            state.saving--;
+            if (state.saving === 0) setSync('saved', 'Створено');
         }
-    } catch (e) {
-        setSync('error', e.message);
-        showToast(`Не вдалося створити: ${e.message}`, true);
-    }
+    })();
 };
 
 async function deleteRecord(id) {
     const rec = state.records.find(r => r.id === id);
-    const label = rec?.apartment || 'цей запис';
+    if (!rec) return;
+    const label = rec.apartment || 'цей запис';
     if (!confirm(`Видалити «${label}»?`)) return;
 
-    const idx     = state.records.findIndex(r => r.id === id);
+    // Wait for any pending create (online or queued) so we know what to archive
+    let resolved;
+    if (rec._pendingCreate) {
+        try { resolved = await rec._pendingCreate; }
+        catch { return; }
+    }
+    const serverId = resolved || rec._serverId || rec.id || id;
+
+    // Special case: row was created offline and the POST is still queued.
+    // Cancel the queued POST + any of its PATCHes — no need to round-trip
+    // just to create and immediately archive on the server.
+    if (typeof serverId === 'string' && serverId.startsWith('temp-')) {
+        const before = mutationQueue.length;
+        mutationQueue = mutationQueue.filter((m) =>
+            !(m.tempId === serverId || m.recordId === serverId)
+        );
+        if (mutationQueue.length !== before) persistQueue();
+        const idx = state.records.findIndex(r => r.id === id);
+        if (idx >= 0) state.records.splice(idx, 1);
+        renderStreetBar();
+        renderEntranceBar();
+        renderRecords();
+        if (state.currentTerritoryId) offlineCache.saveRecords(state.currentTerritoryId, state.records);
+        renderConnectionStatus();
+        return;
+    }
+
+    const idx = state.records.findIndex(r => r.id === id);
+    if (idx < 0) return;
     const removed = state.records.splice(idx, 1)[0];
     renderStreetBar();
     renderEntranceBar();
     renderRecords();
+    if (state.currentTerritoryId) offlineCache.saveRecords(state.currentTerritoryId, state.records);
 
     setSync('saving', 'Видалення…');
     try {
-        await api(`/records/${id}`, { method: 'DELETE' });
+        await mutateOrQueue({
+            method:   'DELETE',
+            path:     `/records/${serverId}`,
+            recordId: id
+        });
         setSync('saved', 'Видалено');
     } catch (e) {
         state.records.splice(idx, 0, removed);
@@ -1444,22 +1920,143 @@ async function deleteRecord(id) {
         renderStreetBar();
         renderEntranceBar();
         renderRecords();
+        if (state.currentTerritoryId) offlineCache.saveRecords(state.currentTerritoryId, state.records);
         setSync('error', e.message);
         showToast(`Не вдалося видалити: ${e.message}`, true);
     }
 }
 
 /* ============================================================
- * Lightbox
+ * Lightbox — click/tap to zoom, drag to pan, wheel + pinch to scale.
+ * Background click closes; image click toggles 1× ↔ 2×.
  * ============================================================ */
+const MIN_ZOOM = 1, MAX_ZOOM = 6;
+const lightboxState = {
+    scale: 1, tx: 0, ty: 0,
+    drag: null,     // pointer-drag state
+    pinch: null     // two-finger pinch state
+};
+
+function applyLightboxTransform() {
+    const img = document.getElementById('lightboxImg');
+    img.style.setProperty('--scale', lightboxState.scale);
+    img.style.setProperty('--tx', lightboxState.tx + 'px');
+    img.style.setProperty('--ty', lightboxState.ty + 'px');
+    img.classList.toggle('zoomed', lightboxState.scale > 1);
+}
+function resetLightboxZoom() {
+    lightboxState.scale = 1;
+    lightboxState.tx = 0;
+    lightboxState.ty = 0;
+    applyLightboxTransform();
+}
+
 function openLightbox(src) {
     const lb = document.getElementById('lightbox');
     document.getElementById('lightboxImg').src = src;
+    resetLightboxZoom();
     lb.classList.add('open');
 }
-document.getElementById('lightbox').addEventListener('click', () => {
+function closeLightbox() {
     document.getElementById('lightbox').classList.remove('open');
+    resetLightboxZoom();
+}
+
+// Click on the dark backdrop (but not the image) closes the lightbox
+document.getElementById('lightbox').addEventListener('click', (e) => {
+    if (e.target.id === 'lightbox') closeLightbox();
 });
+
+const _lbImg = document.getElementById('lightboxImg');
+
+// Tap/click on image toggles 1× ↔ 2× (does not bubble to backdrop)
+_lbImg.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (lightboxState.drag) return;     // ignore the click that ends a drag
+    if (lightboxState.scale === 1) {
+        lightboxState.scale = 2;
+    } else {
+        lightboxState.scale = 1;
+        lightboxState.tx = 0;
+        lightboxState.ty = 0;
+    }
+    applyLightboxTransform();
+});
+
+// Mouse wheel zoom (desktop)
+_lbImg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const next   = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, lightboxState.scale * factor));
+    lightboxState.scale = next;
+    if (next === 1) { lightboxState.tx = 0; lightboxState.ty = 0; }
+    applyLightboxTransform();
+}, { passive: false });
+
+// Single-pointer drag pans the image when zoomed in.
+// Skipped while a two-finger pinch is in progress.
+_lbImg.addEventListener('pointerdown', (e) => {
+    if (lightboxState.pinch) return;
+    if (lightboxState.scale <= 1) return;
+    e.preventDefault();
+    try { _lbImg.setPointerCapture(e.pointerId); } catch {}
+    _lbImg.classList.add('dragging');
+    lightboxState.drag = {
+        startX: e.clientX,
+        startY: e.clientY,
+        tx: lightboxState.tx,
+        ty: lightboxState.ty
+    };
+});
+_lbImg.addEventListener('pointermove', (e) => {
+    if (!lightboxState.drag) return;
+    lightboxState.tx = lightboxState.drag.tx + (e.clientX - lightboxState.drag.startX);
+    lightboxState.ty = lightboxState.drag.ty + (e.clientY - lightboxState.drag.startY);
+    applyLightboxTransform();
+});
+function endLightboxDrag(e) {
+    if (!lightboxState.drag) return;
+    try { _lbImg.releasePointerCapture(e.pointerId); } catch {}
+    _lbImg.classList.remove('dragging');
+    // Defer clearing drag so the synthetic click handler can ignore it
+    setTimeout(() => { lightboxState.drag = null; }, 0);
+}
+_lbImg.addEventListener('pointerup',     endLightboxDrag);
+_lbImg.addEventListener('pointercancel', endLightboxDrag);
+
+// Pinch-to-zoom (two-finger touch). Cancels any in-flight drag.
+_lbImg.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+        e.preventDefault();
+        if (lightboxState.drag) {
+            _lbImg.classList.remove('dragging');
+            lightboxState.drag = null;
+        }
+        lightboxState.pinch = {
+            startDist:  pinchDistance(e.touches),
+            startScale: lightboxState.scale
+        };
+    }
+}, { passive: false });
+_lbImg.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2 && lightboxState.pinch) {
+        e.preventDefault();
+        const dist  = pinchDistance(e.touches);
+        const ratio = dist / lightboxState.pinch.startDist;
+        const next  = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, lightboxState.pinch.startScale * ratio));
+        lightboxState.scale = next;
+        if (next === 1) { lightboxState.tx = 0; lightboxState.ty = 0; }
+        applyLightboxTransform();
+    }
+}, { passive: false });
+_lbImg.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) lightboxState.pinch = null;
+});
+function pinchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+}
 
 /* ============================================================
  * Utils
@@ -1474,7 +2071,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
         closeSelector();
         closeAllStatusMenus(null);
-        document.getElementById('lightbox').classList.remove('open');
+        if (document.getElementById('lightbox').classList.contains('open')) closeLightbox();
     }
 });
 
